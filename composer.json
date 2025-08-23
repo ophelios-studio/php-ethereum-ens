@@ -16,7 +16,7 @@
     ],
     "require": {
       "kornrunner/keccak": "^1.1",
-      "web3p/web3.php": "^0.1.6"
+      "web3p/web3.php": "^0.3.2"
     },
     "require-dev": {
       "phpunit/phpunit": "^9.6",

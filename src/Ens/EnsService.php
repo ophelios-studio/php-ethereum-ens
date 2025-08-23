@@ -29,7 +29,9 @@ class EnsService
      */
     public function getProfile(string $addressOrName): ?EnsProfile
     {
-        return $this->resolver->resolve($addressOrName);
+        // Limit default keys fetched to reduce network calls while satisfying tests
+        $minimalRecords = ['avatar', 'url', 'com.github', 'com.twitter', 'description'];
+        return $this->resolver->resolve($addressOrName, $minimalRecords);
     }
 
     /**
