@@ -1,0 +1,22 @@
+{
+    "name": "ophelios/php-ethereum-ens",
+    "description": "ENS Resolver for PHP.",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+      "psr-4": {
+        "Ens\\": "src/Ens"
+      }
+    },
+    "authors": [
+      {
+        "name": "David Tucker",
+        "email": "david.tucker@ophelios.com"
+      }
+    ],
+    "require": {
+      "kornrunner/keccak": "^1.1",
+      "web3p/web3.php": "^0.1.6"
+    },
+    "minimum-stability": "dev"
+}
