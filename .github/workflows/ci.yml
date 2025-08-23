@@ -10,16 +10,18 @@ jobs:
   unit-tests:
     name: PHP Unit Tests
     runs-on: ubuntu-latest
+    env:
+      QLTY_TOKEN: ${{ secrets.QLTY_TOKEN }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup PHP
+      - name: Setup PHP (with Xdebug for coverage)
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          coverage: none
+          coverage: xdebug
           tools: composer
 
       - name: Validate composer.json
@@ -37,8 +39,23 @@ jobs:
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
 
-      - name: Run unit tests only
-        run: vendor/bin/phpunit --testsuite Unit --colors=always
+      - name: Prepare coverage directory
+        run: mkdir -p build/logs
+
+      - name: Run Unit tests with coverage (Clover)
+        run: vendor/bin/phpunit --testsuite Unit --colors=always --coverage-clover build/logs/clover.xml
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clover-coverage
+          path: build/logs/clover.xml
+
+      - name: Upload coverage to qlty.sh (if token present)
+        if: env.QLTY_TOKEN != ''
+        run: |
+          echo "Uploading coverage to qlty.sh"
+          curl -sSfL https://qlty.sh/coverage | bash -s -- -t "$QLTY_TOKEN" -f build/logs/clover.xml || echo "QLTY upload failed or skipped"
 
   integration-tests:
     name: PHP Integration (Live ENS) Tests
