@@ -93,8 +93,14 @@ class EnsResolver implements EnsResolverInterface
         if (!$resolverAddress) {
             return;
         }
-        // Try to resolve the ETH address for this name (using the node that has a resolver)
+        // Compute the query node for potential wildcard resolvers
+        $queryNode = $this->namehash($name);
+
+        // Primary: use the node that has a resolver (common case). Fallback: try the full name's node for wildcard resolvers.
         $addr = $this->getAddr($resolverAddress, $nodeUsed);
+        if (!$addr) {
+            $addr = $this->getAddr($resolverAddress, $queryNode);
+        }
         if ($addr) {
             $profile->address = $addr;
         }
@@ -119,7 +125,12 @@ class EnsResolver implements EnsResolverInterface
             'com.linkedin' => 'linkedin',
         ];
         foreach ($records as $ensKey) {
+            // Primary: query node that has the resolver
             $value = $this->getText($resolverAddress, $nodeUsed, $ensKey);
+            // Fallback: try the full name's node for wildcard resolvers
+            if ($value === null || $value === '') {
+                $value = $this->getText($resolverAddress, $queryNode, $ensKey);
+            }
             if ($value !== null && $value !== '') {
                 $profile->texts[$ensKey] = $value;
                 if (isset($map[$ensKey])) {
@@ -205,7 +216,25 @@ class EnsResolver implements EnsResolverInterface
         if ($addrHex === str_repeat('0', 40)) {
             return null;
         }
-        return '0x' . strtolower($addrHex);
+        $lower = '0x' . strtolower($addrHex);
+        return $this->toChecksumAddress($lower);
+    }
+
+    private function toChecksumAddress(string $address): string
+    {
+        $addr = strtolower(ltrim($address, '0x'));
+        $hash = Keccak::hash($addr, 256);
+        $checksum = '';
+        for ($i = 0; $i < strlen($addr); $i++) {
+            $char = $addr[$i];
+            if (ctype_digit($char)) {
+                $checksum .= $char;
+                continue;
+            }
+            $hashNibble = hexdec($hash[$i]);
+            $checksum .= ($hashNibble >= 8) ? strtoupper($char) : $char;
+        }
+        return '0x' . $checksum;
     }
 
     private function decodeString(string $hexString): ?string
