@@ -40,7 +40,7 @@ jobs:
         run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Run Unit tests with coverage (Clover)
-        run: composer test --testsuite Unit
+        run: vendor/bin/phpunit --testsuite Unit --colors=always --coverage-clover=./tests/coverage/clover.xml
 
       - name: Upload coverage to Qlty
         uses: qltysh/qlty-action/coverage@v2
