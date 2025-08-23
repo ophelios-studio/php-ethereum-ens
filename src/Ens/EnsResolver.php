@@ -5,25 +5,25 @@ use kornrunner\Keccak;
 class EnsResolver implements EnsResolverInterface
 {
     /**
+     * Default Reverse Resolver (Mainnet) used as a fallback for reverse lookups when the Registry has no resolver set.
+     * Source: ENS Default Reverse Resolver
+     */
+    private const DEFAULT_REVERSE_RESOLVER = '0x084b1c3c81545d370f3634392de611caabff8148';
+
+    /**
      * Default set of ENS text records to fetch when no list is provided at call-site.
      * These include core EIP-634 keys and popular community keys.
      */
     public const DEFAULT_RECORDS = [
         'avatar',
-        'display',
         'url',
         'email',
         'description',
-        'notice',
-        'keywords',
-        // Support both legacy and current keys for popular platforms
         'com.twitter', 'twitter',
         'com.github', 'github',
         'com.discord',
         'com.reddit',
         'org.telegram',
-        'io.keybase',
-        'org.matrix',
         'com.linkedin'
     ];
 
@@ -67,23 +67,35 @@ class EnsResolver implements EnsResolverInterface
         $reverseName = $cleanAddress . '.addr.reverse';
         $nameHash = $this->namehash($reverseName);
         $resolverAddress = $this->getResolver($nameHash);
-        if (!$resolverAddress) {
-            return null;
-        }
         $data = '0x691f3431' . substr($nameHash, 2); // name(bytes32)
-        $result = $this->client->call([
-            'to' => $resolverAddress,
-            'data' => $data,
-            'from' => '0x0000000000000000000000000000000000000000'
-        ]);
-        if (!$result) {
-            return null;
+
+        $tryResolvers = [];
+        if ($resolverAddress) {
+            $tryResolvers[] = strtolower($resolverAddress);
         }
-        $decoded = $this->decodeString($result);
-        if ($decoded === null) {
-            return null;
+        $defaultLower = strtolower(self::DEFAULT_REVERSE_RESOLVER);
+        if (!$resolverAddress || strtolower($resolverAddress) !== $defaultLower) {
+            $tryResolvers[] = $defaultLower;
         }
-        return $this->normalizeName($decoded);
+        // ensure unique list
+        $tryResolvers = array_values(array_unique($tryResolvers));
+
+        foreach ($tryResolvers as $resolver) {
+            if (!$resolver) { continue; }
+            $result = $this->client->call([
+                'to' => $resolver,
+                'data' => $data,
+                'from' => '0x0000000000000000000000000000000000000000'
+            ]);
+            if (!$result) {
+                continue;
+            }
+            $decoded = $this->decodeString($result);
+            if ($decoded !== null && $decoded !== '') {
+                return $this->normalizeName($decoded);
+            }
+        }
+        return null;
     }
 
     private function populateRecords(string $name, EnsProfile $profile, array $records): void
@@ -96,11 +108,9 @@ class EnsResolver implements EnsResolverInterface
         // Compute the query node for potential wildcard resolvers
         $queryNode = $this->namehash($name);
 
-        // Primary: use the node that has a resolver (common case). Fallback: try the full name's node for wildcard resolvers.
-        $addr = $this->getAddr($resolverAddress, $nodeUsed);
-        if (!$addr) {
-            $addr = $this->getAddr($resolverAddress, $queryNode);
-        }
+        // For addresses: only query the full name's node (do NOT fall back to parent node).
+        // This prevents inheriting the parent's address for unassigned subdomains like trump.booe.eth.
+        $addr = $this->getAddr($resolverAddress, $queryNode);
         if ($addr) {
             $profile->address = $addr;
         }
@@ -110,9 +120,6 @@ class EnsResolver implements EnsResolverInterface
             'url' => 'url',
             'email' => 'email',
             'description' => 'description',
-            'display' => 'display',
-            'notice' => 'notice',
-            'keywords' => 'keywords',
             'com.twitter' => 'twitter',
             'twitter' => 'twitter',
             'com.github' => 'github',
@@ -120,16 +127,65 @@ class EnsResolver implements EnsResolverInterface
             'com.discord' => 'discord',
             'com.reddit' => 'reddit',
             'org.telegram' => 'telegram',
-            'io.keybase' => 'keybase',
-            'org.matrix' => 'matrix',
             'com.linkedin' => 'linkedin',
         ];
-        foreach ($records as $ensKey) {
-            // Primary: query node that has the resolver
-            $value = $this->getText($resolverAddress, $nodeUsed, $ensKey);
-            // Fallback: try the full name's node for wildcard resolvers
+
+        // Normalize and de-duplicate requested record keys
+        $requested = [];
+        foreach ($records as $k) {
+            if (is_string($k) && $k !== '') {
+                $requested[strtolower($k)] = true;
+            }
+        }
+        // Keep a copy of original requests to populate texts under requested keys
+        $requestedOrig = $requested;
+
+        // Helper: fetch a text value from preferred node order (queryNode then nodeUsed)
+        $fetchText = function (string $key) use ($resolverAddress, $queryNode, $nodeUsed): ?string {
+            $v = $this->getText($resolverAddress, $queryNode, $key);
+            if ($v === null || $v === '') {
+                $v = $this->getText($resolverAddress, $nodeUsed, $key);
+            }
+            return ($v !== null && $v !== '') ? $v : null;
+        };
+
+        // Avoid duplicate text lookups for twitter: prefer com.twitter, then twitter only if empty on both nodes
+        if (isset($requested['com.twitter']) || isset($requested['twitter'])) {
+            $val = $fetchText('com.twitter');
+            if ($val === null && isset($requested['twitter'])) {
+                $val = $fetchText('twitter');
+            }
+            if ($val !== null) {
+                // Populate texts under whichever keys were originally requested
+                if (isset($requestedOrig['com.twitter'])) { $profile->texts['com.twitter'] = $val; }
+                if (isset($requestedOrig['twitter'])) { $profile->texts['twitter'] = $val; }
+                $profile->twitter = $val;
+            }
+            // Mark as handled to avoid re-query below
+            unset($requested['com.twitter'], $requested['twitter']);
+        }
+
+        // Avoid duplicate text lookups for github: prefer com.github, then github only if empty on both nodes
+        if (isset($requested['com.github']) || isset($requested['github'])) {
+            $val = $fetchText('com.github');
+            if ($val === null && isset($requested['github'])) {
+                $val = $fetchText('github');
+            }
+            if ($val !== null) {
+                if (isset($requestedOrig['com.github'])) { $profile->texts['com.github'] = $val; }
+                if (isset($requestedOrig['github'])) { $profile->texts['github'] = $val; }
+                $profile->github = $val;
+            }
+            unset($requested['com.github'], $requested['github']);
+        }
+
+        // Fetch remaining requested records with standard fallback order
+        foreach (array_keys($requested) as $ensKey) {
+            // Primary: query the full name's node (best for wildcard resolvers)
+            $value = $this->getText($resolverAddress, $queryNode, $ensKey);
+            // Fallback: try the node that directly has the resolver
             if ($value === null || $value === '') {
-                $value = $this->getText($resolverAddress, $queryNode, $ensKey);
+                $value = $this->getText($resolverAddress, $nodeUsed, $ensKey);
             }
             if ($value !== null && $value !== '') {
                 $profile->texts[$ensKey] = $value;
@@ -217,24 +273,8 @@ class EnsResolver implements EnsResolverInterface
             return null;
         }
         $lower = '0x' . strtolower($addrHex);
-        return $this->toChecksumAddress($lower);
-    }
-
-    private function toChecksumAddress(string $address): string
-    {
-        $addr = strtolower(ltrim($address, '0x'));
-        $hash = Keccak::hash($addr, 256);
-        $checksum = '';
-        for ($i = 0; $i < strlen($addr); $i++) {
-            $char = $addr[$i];
-            if (ctype_digit($char)) {
-                $checksum .= $char;
-                continue;
-            }
-            $hashNibble = hexdec($hash[$i]);
-            $checksum .= ($hashNibble >= 8) ? strtoupper($char) : $char;
-        }
-        return '0x' . $checksum;
+        // Return lowercase address to meet requirement and unit tests
+        return $lower;
     }
 
     private function decodeString(string $hexString): ?string
