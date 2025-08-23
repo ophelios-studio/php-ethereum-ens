@@ -11,11 +11,6 @@
             <directory>tests/Integration</directory>
         </testsuite>
     </testsuites>
-    <coverage>
-        <report>
-            <clover outputFile="tests/coverage/clover.xml" />
-        </report>
-    </coverage>
     <source>
         <include>
             <directory>src</directory>
