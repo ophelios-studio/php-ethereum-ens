@@ -90,7 +90,6 @@ vendor/bin/phpunit --coverage-text
 ## Funding / Donations
 If this library helps you, consider supporting:
 - GitHub Sponsors: ophelios-studio
-- Buy Me a Coffee: https://www.buymeacoffee.com/owf91zbsi
 - ETH: ophelios.booe.eth
 
 ## License
