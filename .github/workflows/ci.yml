@@ -20,7 +20,7 @@ jobs:
       - name: Setup PHP (with Xdebug for coverage)
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: '8.4'
           coverage: xdebug
           tools: composer
 
@@ -43,13 +43,15 @@ jobs:
         run: mkdir -p build/logs
 
       - name: Run Unit tests with coverage (Clover)
-        run: vendor/bin/phpunit --testsuite Unit --colors=always
+        run: vendor/bin/phpunit --testsuite Unit --colors=always --coverage-clover=build/logs/clover.xml
+        env:
+          XDEBUG_MODE: coverage
 
       - name: Upload coverage to Qlty
         uses: qltysh/qlty-action/coverage@v2
         with:
           token: ${{secrets.QLTY_TOKEN}}
-          files: coverage/clover.xml
+          files: build/logs/clover.xml
 
   integration-tests:
     name: PHP Integration (Live ENS) Tests
@@ -65,7 +67,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: '8.4'
           coverage: none
           tools: composer
 
