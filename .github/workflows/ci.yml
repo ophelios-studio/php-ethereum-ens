@@ -39,19 +39,14 @@ jobs:
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
 
-      - name: Prepare coverage directory
-        run: mkdir -p build/logs
-
       - name: Run Unit tests with coverage (Clover)
-        run: vendor/bin/phpunit --testsuite Unit --colors=always --coverage-clover=build/logs/clover.xml
-        env:
-          XDEBUG_MODE: coverage
+        run: composer test --testsuite Unit
 
       - name: Upload coverage to Qlty
         uses: qltysh/qlty-action/coverage@v2
         with:
           token: ${{secrets.QLTY_TOKEN}}
-          files: build/logs/clover.xml
+          files: ./tests/coverage/clover.xml
 
   integration-tests:
     name: PHP Integration (Live ENS) Tests

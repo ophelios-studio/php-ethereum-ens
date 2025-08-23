@@ -13,7 +13,12 @@
     </testsuites>
     <coverage>
         <report>
-            <clover outputFile="coverage/clover.xml"/>
+            <clover outputFile="tests/coverage/clover.xml" />
         </report>
     </coverage>
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
 </phpunit>
