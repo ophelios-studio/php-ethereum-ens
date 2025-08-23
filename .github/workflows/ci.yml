@@ -51,11 +51,11 @@ jobs:
           name: clover-coverage
           path: build/logs/clover.xml
 
-      - name: Upload coverage to qlty.sh (if token present)
-        if: env.QLTY_TOKEN != ''
-        run: |
-          echo "Uploading coverage to qlty.sh"
-          curl -sSfL https://qlty.sh/coverage | bash -s -- -t "$QLTY_TOKEN" -f build/logs/clover.xml || echo "QLTY upload failed or skipped"
+      - name: Upload coverage to Qlty
+        uses: qltysh/qlty-action/coverage@v2
+        with:
+          token: ${{secrets.QLTY_TOKEN}}
+          files: build/logs/clover.xml
 
   integration-tests:
     name: PHP Integration (Live ENS) Tests
