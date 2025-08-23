@@ -43,13 +43,13 @@ jobs:
         run: mkdir -p build/logs
 
       - name: Run Unit tests with coverage (Clover)
-        run: vendor/bin/phpunit --testsuite Unit --colors=always --coverage-clover clover.xml
+        run: vendor/bin/phpunit --testsuite Unit --colors=always
 
       - name: Upload coverage to Qlty
         uses: qltysh/qlty-action/coverage@v2
         with:
           token: ${{secrets.QLTY_TOKEN}}
-          files: clover.xml
+          files: coverage/clover.xml
 
   integration-tests:
     name: PHP Integration (Live ENS) Tests
