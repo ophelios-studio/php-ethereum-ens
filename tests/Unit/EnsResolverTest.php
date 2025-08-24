@@ -2,7 +2,7 @@
 
 use Ens\Configuration;
 use Ens\EnsClientInterface;
-use Ens\EnsResolver;
+use Ens\EnsResolutionEngine;
 use Ens\EnsProfile;
 use kornrunner\Keccak;
 use PHPUnit\Framework\TestCase;
@@ -63,7 +63,7 @@ class EnsResolverTest extends TestCase
             }
         };
 
-        $resolver = new EnsResolver($client, $config);
+        $resolver = new EnsResolutionEngine($client, $config);
         $profile = $resolver->resolve($name, ['twitter']);
 
         $this->assertInstanceOf(EnsProfile::class, $profile);
@@ -111,7 +111,7 @@ class EnsResolverTest extends TestCase
             }
         };
 
-        $resolver = new EnsResolver($client, $config);
+        $resolver = new EnsResolutionEngine($client, $config);
         $profile = $resolver->resolve($addr, []);
 
         $this->assertSame('example.eth', $profile->name);

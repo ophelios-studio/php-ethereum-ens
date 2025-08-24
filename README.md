@@ -19,10 +19,10 @@ composer require ophelios/php-ethereum-ens
 ## Quick start
 
 ```php
-use Ens\EnsService;
+use Ens\EnsResolver;
 
 $providerUrl = 'https://mainnet.infura.io/v3/<your-project-id>'; // or any mainnet JSON‑RPC URL
-$ens = new EnsService($providerUrl);
+$ens = new EnsResolver($providerUrl);
 
 // Resolve by name
 $profile = $ens->getProfile('vitalik.eth');
