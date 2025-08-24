@@ -3,10 +3,10 @@
 use Web3\Web3;
 use Web3\Providers\HttpProvider;
 
-class Web3Client implements EnsClientInterface
+readonly class Web3Client implements EnsClientInterface
 {
-    private readonly Web3 $web3;
-    private readonly Configuration $configuration;
+    private Web3 $web3;
+    private Configuration $configuration;
 
     public function __construct(Configuration $config)
     {
