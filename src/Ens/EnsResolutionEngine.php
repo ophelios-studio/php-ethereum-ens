@@ -1,7 +1,5 @@
 <?php namespace Ens;
 
-use kornrunner\Keccak;
-
 class EnsResolutionEngine implements EnsResolverInterface
 {
     /**
@@ -23,13 +21,24 @@ class EnsResolutionEngine implements EnsResolverInterface
         'com.github', 'github'
     ];
 
+    private ContractReader $reader;
+
     public function __construct(
         private readonly EnsClientInterface $client,
         private readonly Configuration $config
-    ) {}
+    ) {
+        $this->reader = new ContractReader($client, $config);
+    }
 
     /**
-     * High-level resolve aggregation used by EnsService->getProfile().
+     * Resolve an ENS profile from either an address or a name.
+     * - If an ENS name is provided, fetch requested records for that name.
+     * - If an address is provided, perform reverse lookup to discover a primary name, then fetch records.
+     * Any provided $records list limits which text records are queried; if null, DEFAULT_RECORDS is used.
+     *
+     * @param string $addressOrName Ethereum address (0x...) or ENS name (e.g. example.eth).
+     * @param array<string>|null $records ENS text record keys to fetch (e.g. ['avatar','com.twitter']).
+     * @return EnsProfile A profile with name/address and requested properties populated when available.
      */
     public function resolve(string $addressOrName, ?array $records = null): EnsProfile
     {
@@ -38,7 +47,7 @@ class EnsResolutionEngine implements EnsResolverInterface
         try {
             if (str_contains($addressOrName, '.')) {
                 // It's a name like example.eth
-                $normalizedName = $this->normalizeName($addressOrName);
+                $normalizedName = Utilities::normalize($addressOrName);
                 $profile->name = $normalizedName;
                 $this->populateRecords($normalizedName, $profile, $recordsToFetch);
             } else {
@@ -48,7 +57,7 @@ class EnsResolutionEngine implements EnsResolverInterface
                 $profile->address = $normalized;
                 $name = $this->fetchName($addressOrName);
                 if ($name) {
-                    $normalizedName = $this->normalizeName($name);
+                    $normalizedName = Utilities::normalize($name);
                     $profile->name = $normalizedName;
                     $this->populateRecords($normalizedName, $profile, $recordsToFetch);
                 }
@@ -73,13 +82,21 @@ class EnsResolutionEngine implements EnsResolverInterface
         return $profile;
     }
 
+    /**
+     * Reverse resolve an Ethereum address to its primary ENS name.
+     * Tries the resolver configured in the registry for <addr>.addr.reverse and falls back to the
+     * default reverse resolver when necessary.
+     *
+     * @param string $address Ethereum address (with or without 0x prefix).
+     * @return string|null Normalized ENS name if available; otherwise null.
+     */
     public function fetchName(string $address): ?string
     {
         $address = strtolower(trim($address));
         $cleanAddress = str_starts_with($address, '0x') ? substr($address, 2) : $address;
         $reverseName = $cleanAddress . '.addr.reverse';
-        $nameHash = $this->namehash($reverseName);
-        $resolverAddress = $this->getResolver($nameHash);
+        $nameHash = Utilities::namehash($reverseName);
+        $resolverAddress = $this->reader->getResolver($nameHash);
         $data = '0x691f3431' . substr($nameHash, 2); // name(bytes32)
 
         $tryResolvers = [];
@@ -104,14 +121,101 @@ class EnsResolutionEngine implements EnsResolverInterface
                 if (!$result) {
                     continue;
                 }
-                $decoded = $this->decodeString($result);
+                $decoded = $this->reader->decodeString($result);
                 if ($decoded !== null && $decoded !== '') {
-                    return $this->normalizeName($decoded);
+                    return Utilities::normalize($decoded);
                 }
             }
         }
         return null;
     }
+
+    // ============ Public low-level helpers ============
+
+    /**
+     * Return the resolver address for a given ENS name.
+     *
+     * @param string $ensName ENS name (e.g. example.eth)
+     * @return string|null 0x-prefixed resolver address or null if none configured.
+     */
+    public function fetchResolverAddressForName(string $ensName): ?string
+    {
+        $node = Utilities::namehash(Utilities::normalize($ensName));
+        return $this->reader->getResolver($node);
+    }
+
+    /**
+     * Resolve the ETH address for a given ENS name via its resolver.
+     * Returns a lowercase 0x address when available.
+     *
+     * @param string $ensName ENS name (e.g. example.eth)
+     * @return string|null Lowercase 0x address or null.
+     */
+    public function resolveAddressForName(string $ensName): ?string
+    {
+        $node = Utilities::namehash(Utilities::normalize($ensName));
+        $resolver = $this->reader->getResolver($node);
+        if (!$resolver) { return null; }
+        return $this->reader->getAddr($resolver, $node);
+    }
+
+    /**
+     * Convenience reverse lookup wrapper (no primary name verification).
+     *
+     * @param string $address Ethereum address.
+     * @return string|null Normalized ENS name or null.
+     */
+    public function reverseLookupAddress(string $address): ?string
+    {
+        return $this->fetchName($address);
+    }
+
+    /**
+     * Fetch a single text record value for the exact node of the given ENS name.
+     * This does not apply parent fallback; for avatar fallback use fetchAvatar().
+     *
+     * @param string $ensName ENS name to query.
+     * @param string $key Text record key (e.g. avatar, com.twitter, url).
+     * @return string|null Non-empty string value or null.
+     */
+    public function fetchText(string $ensName, string $key): ?string
+    {
+        $node = Utilities::namehash(Utilities::normalize($ensName));
+        $resolver = $this->reader->getResolver($node);
+        if (!$resolver) { return null; }
+        $v = $this->reader->getText($resolver, $node, $key);
+        return ($v !== null && $v !== '') ? $v : null;
+    }
+
+    /**
+     * Fetch avatar text record applying a single-level parent fallback.
+     * If the name has no avatar set on its resolver, tries the parent domain.
+     *
+     * @param string $ensName ENS name to query.
+     * @return string|null Avatar URI or null.
+     */
+    public function fetchAvatar(string $ensName): ?string
+    {
+        $name = Utilities::normalize($ensName);
+        $node = Utilities::namehash($name);
+        $resolver = $this->reader->getResolver($node);
+        if ($resolver) {
+            $v = $this->reader->getText($resolver, $node, 'avatar');
+            if ($v !== null && $v !== '') { return $v; }
+        }
+        // Parent fallback
+        $dotPos = strpos($name, '.');
+        if ($dotPos === false) { return null; }
+        $parent = substr($name, $dotPos + 1);
+        if (!$parent) { return null; }
+        $pNode = Utilities::namehash($parent);
+        $pResolver = $this->reader->getResolver($pNode);
+        if (!$pResolver) { return null; }
+        $pv = $this->reader->getText($pResolver, $pNode, 'avatar');
+        return ($pv !== null && $pv !== '') ? $pv : null;
+    }
+
+    // ======== Private helpers (kept at end) ========
 
     private function populateRecords(string $name, EnsProfile $profile, array $records): void
     {
@@ -121,12 +225,12 @@ class EnsResolutionEngine implements EnsResolverInterface
             return;
         }
         // Compute the query node for potential wildcard resolvers
-        $queryNode = $this->namehash($name);
+        $queryNode = Utilities::namehash($name);
 
         // For addresses: query the full name's node; if empty, try the node that owns the resolver
-        $addr = $this->getAddr($resolverAddress, $queryNode);
+        $addr = $this->reader->getAddr($resolverAddress, $queryNode);
         if (!$addr && $nodeUsed !== $queryNode) {
-            $addr = $this->getAddr($resolverAddress, $nodeUsed);
+            $addr = $this->reader->getAddr($resolverAddress, $nodeUsed);
         }
         if ($addr) {
             $profile->address = $addr;
@@ -159,9 +263,9 @@ class EnsResolutionEngine implements EnsResolverInterface
 
         // Helper: fetch a text value from preferred node order (queryNode then nodeUsed)
         $fetchText = function (string $key) use ($resolverAddress, $queryNode, $nodeUsed): ?string {
-            $v = $this->getText($resolverAddress, $queryNode, $key);
+            $v = $this->reader->getText($resolverAddress, $queryNode, $key);
             if ($v === null || $v === '') {
-                $v = $this->getText($resolverAddress, $nodeUsed, $key);
+                $v = $this->reader->getText($resolverAddress, $nodeUsed, $key);
             }
             return ($v !== null && $v !== '') ? $v : null;
         };
@@ -220,10 +324,10 @@ class EnsResolutionEngine implements EnsResolverInterface
     private function findResolverUpTree(string $name): array
     {
         // Walk up from the full name to parents until a resolver is found
-        $current = $this->normalizeName($name);
+        $current = Utilities::normalize($name);
         while (true) {
-            $node = $this->namehash($current);
-            $resolver = $this->getResolver($node);
+            $node = Utilities::namehash($current);
+            $resolver = $this->reader->getResolver($node);
             if ($resolver) {
                 return [$resolver, $node];
             }
@@ -238,165 +342,5 @@ class EnsResolutionEngine implements EnsResolverInterface
             }
         }
         return [null, ''];
-    }
-
-    private function getResolver(string $node): ?string
-    {
-        $result = $this->client->call([
-            'to' => $this->config->registryAddress,
-            'data' => '0x0178b8bf' . substr($node, 2)
-        ]);
-        if ($result && $result !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
-            return '0x' . substr($result, 26);
-        }
-        return null;
-    }
-
-    private function getText(string $resolverAddress, string $node, string $key): ?string
-    {
-        $selector = '59d1d43c';
-        $encodedNode = substr($node, 2);
-        $stringOffset = str_pad('40', 64, '0', STR_PAD_LEFT);
-        $stringLength = str_pad(dechex(strlen($key)), 64, '0', STR_PAD_LEFT);
-        $stringData = str_pad(bin2hex($key), ceil(strlen(bin2hex($key)) / 64) * 64, '0', STR_PAD_RIGHT);
-        $data = '0x' . $selector . $encodedNode . $stringOffset . $stringLength . $stringData;
-        $result = $this->client->call([
-            'to' => $resolverAddress,
-            'data' => $data
-        ]);
-        if (!$result) {
-            return null;
-        }
-        return $this->decodeString($result);
-    }
-
-    private function getAddr(string $resolverAddress, string $node): ?string
-    {
-        // resolver.addr(bytes32) selector: 0x3b3b57de
-        $selector = '3b3b57de';
-        $encodedNode = substr($node, 2);
-        $data = '0x' . $selector . $encodedNode;
-        $result = $this->client->call([
-            'to' => $resolverAddress,
-            'data' => $data
-        ]);
-        if (!$result || $result === '0x' ) {
-            return null;
-        }
-        // Result is a 32-byte word; extract the last 20 bytes as the address
-        $hex = substr($result, 2);
-        if (strlen($hex) < 64) {
-            return null;
-        }
-        $addrHex = substr($hex, -40);
-        if ($addrHex === str_repeat('0', 40)) {
-            return null;
-        }
-        $lower = '0x' . strtolower($addrHex);
-        // Return lowercase address to meet requirement and unit tests
-        return $lower;
-    }
-
-    private function decodeString(string $hexString): ?string
-    {
-        try {
-            $hex = substr($hexString, 2);
-            $offset = hexdec(substr($hex, 0, 64));
-            $length = hexdec(substr($hex, $offset * 2, 64));
-            if ($length === 0) {
-                return null;
-            }
-            $stringHex = substr($hex, ($offset * 2) + 64, $length * 2);
-            return hex2bin($stringHex);
-        } catch (\Throwable $e) {
-            return null;
-        }
-    }
-
-    private function normalizeName(string $name): string
-    {
-        // Trim whitespace and trailing dot, lowercase labels; attempt IDNA ASCII conversion when available
-        $n = trim($name);
-        $n = rtrim($n, '.');
-        $n = strtolower($n);
-        if (function_exists('idn_to_ascii')) {
-            try {
-                $ascii = idn_to_ascii($n, IDNA_DEFAULT);
-                if ($ascii !== false && is_string($ascii)) {
-                    return strtolower($ascii);
-                }
-            } catch (\Throwable $e) {
-                // ignore and fall back to lowercased input
-            }
-        }
-        return $n;
-    }
-
-    private function namehash(string $name): string
-    {
-        $node = str_repeat('0', 64);
-        if ($name) {
-            $labels = array_reverse(explode('.', $name));
-            foreach ($labels as $label) {
-                $node = Keccak::hash(hex2bin($node) . hex2bin(Keccak::hash($label, 256)), 256);
-            }
-        }
-        return '0x' . $node;
-    }
-
-    // ============ New public low-level helpers ============
-
-    /** Return resolver address for a given ENS name (or null). */
-    public function fetchResolverAddressForName(string $ensName): ?string
-    {
-        $node = $this->namehash($this->normalizeName($ensName));
-        return $this->getResolver($node);
-    }
-
-    /** Return ETH address (0x lowercase) for a given ENS name (or null). */
-    public function resolveAddressForName(string $ensName): ?string
-    {
-        $node = $this->namehash($this->normalizeName($ensName));
-        $resolver = $this->getResolver($node);
-        if (!$resolver) { return null; }
-        return $this->getAddr($resolver, $node);
-    }
-
-    /** Reverse lookup of an address to primary name (no verification). */
-    public function reverseLookupAddress(string $address): ?string
-    {
-        return $this->fetchName($address);
-    }
-
-    /** Low-level text fetch (exact node only, no parent fallback). */
-    public function fetchTextForName(string $ensName, string $key): ?string
-    {
-        $node = $this->namehash($this->normalizeName($ensName));
-        $resolver = $this->getResolver($node);
-        if (!$resolver) { return null; }
-        $v = $this->getText($resolver, $node, $key);
-        return ($v !== null && $v !== '') ? $v : null;
-    }
-
-    /** Avatar text with single-level parent fallback. */
-    public function fetchAvatar(string $ensName): ?string
-    {
-        $name = $this->normalizeName($ensName);
-        $node = $this->namehash($name);
-        $resolver = $this->getResolver($node);
-        if ($resolver) {
-            $v = $this->getText($resolver, $node, 'avatar');
-            if ($v !== null && $v !== '') { return $v; }
-        }
-        // Parent fallback
-        $dotPos = strpos($name, '.');
-        if ($dotPos === false) { return null; }
-        $parent = substr($name, $dotPos + 1);
-        if (!$parent) { return null; }
-        $pNode = $this->namehash($parent);
-        $pResolver = $this->getResolver($pNode);
-        if (!$pResolver) { return null; }
-        $pv = $this->getText($pResolver, $pNode, 'avatar');
-        return ($pv !== null && $pv !== '') ? $pv : null;
     }
 }
