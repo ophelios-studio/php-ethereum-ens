@@ -1,6 +1,6 @@
 <?php
 
-use Ens\EnsService;
+use Ens\EnsResolver;
 use PHPUnit\Framework\TestCase;
 
 class LiveEnsTest extends TestCase
@@ -9,7 +9,7 @@ class LiveEnsTest extends TestCase
     {
         $provider = $this->getProviderUrl();
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
-        $service = new EnsService($provider);
+        $service = new EnsResolver($provider);
         $profile = $service->getProfile('vitalik.eth');
         print_r($profile);
         $this->assertNotNull($profile, 'Profile should not be null');
@@ -26,7 +26,7 @@ class LiveEnsTest extends TestCase
     {
         $provider = $this->getProviderUrl();
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
-        $service = new EnsService($provider);
+        $service = new EnsResolver($provider);
         $profile = $service->getProfile('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045');
         print_r($profile);
         $this->assertNotNull($profile, 'Profile should not be null');
@@ -43,7 +43,7 @@ class LiveEnsTest extends TestCase
     {
         $provider = $this->getProviderUrl();
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
-        $service = new EnsService($provider);
+        $service = new EnsResolver($provider);
         $profile = $service->getProfile('ophelios.booe.eth');
         print_r($profile);
         $this->assertNotNull($profile, 'Profile should not be null');
@@ -59,7 +59,7 @@ class LiveEnsTest extends TestCase
     {
         $provider = $this->getProviderUrl();
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
-        $service = new EnsService($provider);
+        $service = new EnsResolver($provider);
         $profile = $service->getProfile('0xe4A2C90a656D0DEc8357953d97C5AcbA7C3f32d4');
         print_r($profile);
         $this->assertNotNull($profile, 'Profile should not be null');
@@ -75,7 +75,7 @@ class LiveEnsTest extends TestCase
     {
         $provider = $this->getProviderUrl();
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
-        $service = new EnsService($provider);
+        $service = new EnsResolver($provider);
         $profile = $service->getProfile('dadajuice.booe.eth');
         print_r($profile);
         $this->assertNotNull($profile, 'Profile should not be null');
@@ -88,7 +88,7 @@ class LiveEnsTest extends TestCase
     {
         $provider = $this->getProviderUrl();
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
-        $service = new EnsService($provider);
+        $service = new EnsResolver($provider);
         $profile = $service->getProfile('0x846a07aa7577440174Fe89B82130D836389b1b81');
         print_r($profile);
         $this->assertNotNull($profile, 'Profile should not be null');
@@ -101,7 +101,7 @@ class LiveEnsTest extends TestCase
     {
         $provider = $this->getProviderUrl();
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
-        $service = new EnsService($provider);
+        $service = new EnsResolver($provider);
         $profile = $service->getProfile('trump.booe.eth');
         print_r($profile);
         $this->assertSame('trump.booe.eth', $profile->name);
