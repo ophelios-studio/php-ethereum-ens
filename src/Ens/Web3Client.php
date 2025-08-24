@@ -27,7 +27,7 @@ class Web3Client implements EnsClientInterface
                 return $result;
             }
             // Retry backoff with jitter 50–250ms
-            $jitterUs = random_int(50_000, 250_000);
+            $jitterUs = random_int(100_000, 250_000);
             usleep($jitterUs);
         }
         // Return null if all attempts failed or the node returned empty/0x
