@@ -88,7 +88,8 @@ class EnsResolver implements EnsResolverInterface
             }
             $decoded = $this->decodeString($result);
             if ($decoded !== null && $decoded !== '') {
-                return $this->normalizeName($decoded);
+                $candidate = $this->normalizeName($decoded);
+                return $candidate;
             }
         }
         return null;
@@ -136,36 +137,58 @@ class EnsResolver implements EnsResolverInterface
         // Keep a copy of original requests to populate texts under requested keys
         $requestedOrig = $requested;
 
-        // Helper: fetch a text value from preferred node order (queryNode then nodeUsed)
-        $fetchText = function (string $key) use ($resolverAddress, $queryNode, $nodeUsed): ?string {
+        // Helper to fetch text only from the exact queried node (no parent fallback) per spec
+        $fetchTextExact = function (string $key) use ($resolverAddress, $queryNode): ?string {
             $v = $this->getText($resolverAddress, $queryNode, $key);
-            if ($v === null || $v === '') {
-                $v = $this->getText($resolverAddress, $nodeUsed, $key);
-            }
             return ($v !== null && $v !== '') ? $v : null;
         };
 
-        // Avoid duplicate text lookups for twitter: prefer com.twitter, then twitter only if empty on both nodes
+        // Avatar with parent fallback (single-level): if missing on child, look at immediate parent
+        if (isset($requested['avatar'])) {
+            $avatar = $fetchTextExact('avatar');
+            if ($avatar === null) {
+                // Compute immediate parent
+                $dotPos = strpos($name, '.');
+                if ($dotPos !== false) {
+                    $parentName = substr($name, $dotPos + 1);
+                    if (is_string($parentName) && $parentName !== '') {
+                        $parentNode = $this->namehash($this->normalizeName($parentName));
+                        $parentResolver = $this->getResolver($parentNode);
+                        if ($parentResolver) {
+                            $p = $this->getText($parentResolver, $parentNode, 'avatar');
+                            if ($p !== null && $p !== '') {
+                                $avatar = $p;
+                            }
+                        }
+                    }
+                }
+            }
+            if ($avatar !== null) {
+                $profile->avatar = $avatar;
+                $profile->texts['avatar'] = $avatar;
+            }
+            unset($requested['avatar']);
+        }
+
+        // Avoid duplicate text lookups for twitter: prefer com.twitter, then twitter; exact node only
         if (isset($requested['com.twitter']) || isset($requested['twitter'])) {
-            $val = $fetchText('com.twitter');
+            $val = $fetchTextExact('com.twitter');
             if ($val === null && isset($requested['twitter'])) {
-                $val = $fetchText('twitter');
+                $val = $fetchTextExact('twitter');
             }
             if ($val !== null) {
-                // Populate texts under whichever keys were originally requested
                 if (isset($requestedOrig['com.twitter'])) { $profile->texts['com.twitter'] = $val; }
                 if (isset($requestedOrig['twitter'])) { $profile->texts['twitter'] = $val; }
                 $profile->twitter = $val;
             }
-            // Mark as handled to avoid re-query below
             unset($requested['com.twitter'], $requested['twitter']);
         }
 
-        // Avoid duplicate text lookups for github: prefer com.github, then github only if empty on both nodes
+        // Avoid duplicate text lookups for github: prefer com.github, then github; exact node only
         if (isset($requested['com.github']) || isset($requested['github'])) {
-            $val = $fetchText('com.github');
+            $val = $fetchTextExact('com.github');
             if ($val === null && isset($requested['github'])) {
-                $val = $fetchText('github');
+                $val = $fetchTextExact('github');
             }
             if ($val !== null) {
                 if (isset($requestedOrig['com.github'])) { $profile->texts['com.github'] = $val; }
@@ -175,14 +198,9 @@ class EnsResolver implements EnsResolverInterface
             unset($requested['com.github'], $requested['github']);
         }
 
-        // Fetch remaining requested records with standard fallback order
+        // Fetch remaining requested records from the exact node only (no parent fallback)
         foreach (array_keys($requested) as $ensKey) {
-            // Primary: query the full name's node (best for wildcard resolvers)
             $value = $this->getText($resolverAddress, $queryNode, $ensKey);
-            // Fallback: try the node that directly has the resolver
-            if ($value === null || $value === '') {
-                $value = $this->getText($resolverAddress, $nodeUsed, $ensKey);
-            }
             if ($value !== null && $value !== '') {
                 $profile->texts[$ensKey] = $value;
                 if (isset($map[$ensKey])) {
