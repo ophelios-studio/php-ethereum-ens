@@ -5,9 +5,9 @@ use Web3\Providers\HttpProvider;
 
 class Web3Client implements EnsClientInterface
 {
-    private Web3 $web3;
+    private readonly Web3 $web3;
 
-    public function __construct(private readonly Configuration $config)
+    public function __construct(Configuration $config)
     {
         $this->web3 = new Web3(new HttpProvider($config->rpcUrl, $config->timeoutMs));
     }

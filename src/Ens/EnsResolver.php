@@ -8,13 +8,13 @@ class EnsResolver implements EnsResolverInterface
      * Default Reverse Resolver (Mainnet) used as a fallback for reverse lookups when the Registry has no resolver set.
      * Source: ENS Default Reverse Resolver
      */
-    private const DEFAULT_REVERSE_RESOLVER = '0x084b1c3c81545d370f3634392de611caabff8148';
+    private const string DEFAULT_REVERSE_RESOLVER = '0x084b1c3c81545d370f3634392de611caabff8148';
 
     /**
      * Default set of ENS text records to fetch when no list is provided at call-site.
      * These include core EIP-634 keys and popular community keys.
      */
-    public const DEFAULT_RECORDS = [
+    public const array DEFAULT_RECORDS = [
         'avatar',
         'url',
         'email',
@@ -28,6 +28,9 @@ class EnsResolver implements EnsResolverInterface
         private readonly Configuration $config
     ) {}
 
+    /**
+     * High-level resolve aggregation used by EnsService->getProfile().
+     */
     public function resolve(string $addressOrName, ?array $records = null): EnsProfile
     {
         $profile = new EnsProfile();
@@ -43,11 +46,25 @@ class EnsResolver implements EnsResolverInterface
                 $normalized = strtolower($addressOrName);
                 $normalized = str_starts_with($normalized, '0x') ? $normalized : ('0x' . $normalized);
                 $profile->address = $normalized;
-                $name = $this->getNameFromAddress($addressOrName);
+                $name = $this->fetchName($addressOrName);
                 if ($name) {
                     $normalizedName = $this->normalizeName($name);
                     $profile->name = $normalizedName;
                     $this->populateRecords($normalizedName, $profile, $recordsToFetch);
+                }
+            }
+            // Post-safeguards for resilience against transient misses
+            if ($profile->name) {
+                if ($profile->avatar === null) {
+                    $av = $this->fetchAvatar($profile->name);
+                    if ($av !== null && $av !== '') {
+                        $profile->avatar = $av;
+                        $profile->texts['avatar'] = $av;
+                    }
+                }
+                if ($profile->address === null) {
+                    $addr = $this->resolveAddressForName($profile->name);
+                    if ($addr) { $profile->address = $addr; }
                 }
             }
         } catch (\Throwable $e) {
@@ -56,7 +73,7 @@ class EnsResolver implements EnsResolverInterface
         return $profile;
     }
 
-    private function getNameFromAddress(string $address): ?string
+    public function fetchName(string $address): ?string
     {
         $address = strtolower(trim($address));
         $cleanAddress = str_starts_with($address, '0x') ? substr($address, 2) : $address;
@@ -76,20 +93,21 @@ class EnsResolver implements EnsResolverInterface
         // ensure unique list
         $tryResolvers = array_values(array_unique($tryResolvers));
 
-        foreach ($tryResolvers as $resolver) {
-            if (!$resolver) { continue; }
-            $result = $this->client->call([
-                'to' => $resolver,
-                'data' => $data,
-                'from' => '0x0000000000000000000000000000000000000000'
-            ]);
-            if (!$result) {
-                continue;
-            }
-            $decoded = $this->decodeString($result);
-            if ($decoded !== null && $decoded !== '') {
-                $candidate = $this->normalizeName($decoded);
-                return $candidate;
+        for ($pass = 0; $pass < 2; $pass++) {
+            foreach ($tryResolvers as $resolver) {
+                if (!$resolver) { continue; }
+                $result = $this->client->call([
+                    'to' => $resolver,
+                    'data' => $data,
+                    'from' => '0x0000000000000000000000000000000000000000'
+                ]);
+                if (!$result) {
+                    continue;
+                }
+                $decoded = $this->decodeString($result);
+                if ($decoded !== null && $decoded !== '') {
+                    return $this->normalizeName($decoded);
+                }
             }
         }
         return null;
@@ -105,9 +123,11 @@ class EnsResolver implements EnsResolverInterface
         // Compute the query node for potential wildcard resolvers
         $queryNode = $this->namehash($name);
 
-        // For addresses: only query the full name's node (do NOT fall back to parent node).
-        // This prevents inheriting the parent's address for unassigned subdomains like trump.booe.eth.
+        // For addresses: query the full name's node; if empty, try the node that owns the resolver
         $addr = $this->getAddr($resolverAddress, $queryNode);
+        if (!$addr && $nodeUsed !== $queryNode) {
+            $addr = $this->getAddr($resolverAddress, $nodeUsed);
+        }
         if ($addr) {
             $profile->address = $addr;
         }
@@ -137,32 +157,18 @@ class EnsResolver implements EnsResolverInterface
         // Keep a copy of original requests to populate texts under requested keys
         $requestedOrig = $requested;
 
-        // Helper to fetch text only from the exact queried node (no parent fallback) per spec
-        $fetchTextExact = function (string $key) use ($resolverAddress, $queryNode): ?string {
+        // Helper: fetch a text value from preferred node order (queryNode then nodeUsed)
+        $fetchText = function (string $key) use ($resolverAddress, $queryNode, $nodeUsed): ?string {
             $v = $this->getText($resolverAddress, $queryNode, $key);
+            if ($v === null || $v === '') {
+                $v = $this->getText($resolverAddress, $nodeUsed, $key);
+            }
             return ($v !== null && $v !== '') ? $v : null;
         };
 
-        // Avatar with parent fallback (single-level): if missing on child, look at immediate parent
+        // Avatar via dedicated helper (with single-level parent fallback)
         if (isset($requested['avatar'])) {
-            $avatar = $fetchTextExact('avatar');
-            if ($avatar === null) {
-                // Compute immediate parent
-                $dotPos = strpos($name, '.');
-                if ($dotPos !== false) {
-                    $parentName = substr($name, $dotPos + 1);
-                    if (is_string($parentName) && $parentName !== '') {
-                        $parentNode = $this->namehash($this->normalizeName($parentName));
-                        $parentResolver = $this->getResolver($parentNode);
-                        if ($parentResolver) {
-                            $p = $this->getText($parentResolver, $parentNode, 'avatar');
-                            if ($p !== null && $p !== '') {
-                                $avatar = $p;
-                            }
-                        }
-                    }
-                }
-            }
+            $avatar = $this->fetchAvatar($name);
             if ($avatar !== null) {
                 $profile->avatar = $avatar;
                 $profile->texts['avatar'] = $avatar;
@@ -170,11 +176,11 @@ class EnsResolver implements EnsResolverInterface
             unset($requested['avatar']);
         }
 
-        // Avoid duplicate text lookups for twitter: prefer com.twitter, then twitter; exact node only
+        // Avoid duplicate text lookups for twitter: prefer com.twitter, then twitter
         if (isset($requested['com.twitter']) || isset($requested['twitter'])) {
-            $val = $fetchTextExact('com.twitter');
+            $val = $fetchText('com.twitter');
             if ($val === null && isset($requested['twitter'])) {
-                $val = $fetchTextExact('twitter');
+                $val = $fetchText('twitter');
             }
             if ($val !== null) {
                 if (isset($requestedOrig['com.twitter'])) { $profile->texts['com.twitter'] = $val; }
@@ -184,11 +190,11 @@ class EnsResolver implements EnsResolverInterface
             unset($requested['com.twitter'], $requested['twitter']);
         }
 
-        // Avoid duplicate text lookups for github: prefer com.github, then github; exact node only
+        // Avoid duplicate text lookups for github: prefer com.github, then github
         if (isset($requested['com.github']) || isset($requested['github'])) {
-            $val = $fetchTextExact('com.github');
+            $val = $fetchText('com.github');
             if ($val === null && isset($requested['github'])) {
-                $val = $fetchTextExact('github');
+                $val = $fetchText('github');
             }
             if ($val !== null) {
                 if (isset($requestedOrig['com.github'])) { $profile->texts['com.github'] = $val; }
@@ -198,9 +204,9 @@ class EnsResolver implements EnsResolverInterface
             unset($requested['com.github'], $requested['github']);
         }
 
-        // Fetch remaining requested records from the exact node only (no parent fallback)
+        // Fetch remaining requested records with standard fallback order
         foreach (array_keys($requested) as $ensKey) {
-            $value = $this->getText($resolverAddress, $queryNode, $ensKey);
+            $value = $fetchText($ensKey);
             if ($value !== null && $value !== '') {
                 $profile->texts[$ensKey] = $value;
                 if (isset($map[$ensKey])) {
@@ -336,5 +342,61 @@ class EnsResolver implements EnsResolverInterface
             }
         }
         return '0x' . $node;
+    }
+
+    // ============ New public low-level helpers ============
+
+    /** Return resolver address for a given ENS name (or null). */
+    public function fetchResolverAddressForName(string $ensName): ?string
+    {
+        $node = $this->namehash($this->normalizeName($ensName));
+        return $this->getResolver($node);
+    }
+
+    /** Return ETH address (0x lowercase) for a given ENS name (or null). */
+    public function resolveAddressForName(string $ensName): ?string
+    {
+        $node = $this->namehash($this->normalizeName($ensName));
+        $resolver = $this->getResolver($node);
+        if (!$resolver) { return null; }
+        return $this->getAddr($resolver, $node);
+    }
+
+    /** Reverse lookup of an address to primary name (no verification). */
+    public function reverseLookupAddress(string $address): ?string
+    {
+        return $this->fetchName($address);
+    }
+
+    /** Low-level text fetch (exact node only, no parent fallback). */
+    public function fetchTextForName(string $ensName, string $key): ?string
+    {
+        $node = $this->namehash($this->normalizeName($ensName));
+        $resolver = $this->getResolver($node);
+        if (!$resolver) { return null; }
+        $v = $this->getText($resolver, $node, $key);
+        return ($v !== null && $v !== '') ? $v : null;
+    }
+
+    /** Avatar text with single-level parent fallback. */
+    public function fetchAvatar(string $ensName): ?string
+    {
+        $name = $this->normalizeName($ensName);
+        $node = $this->namehash($name);
+        $resolver = $this->getResolver($node);
+        if ($resolver) {
+            $v = $this->getText($resolver, $node, 'avatar');
+            if ($v !== null && $v !== '') { return $v; }
+        }
+        // Parent fallback
+        $dotPos = strpos($name, '.');
+        if ($dotPos === false) { return null; }
+        $parent = substr($name, $dotPos + 1);
+        if (!$parent) { return null; }
+        $pNode = $this->namehash($parent);
+        $pResolver = $this->getResolver($pNode);
+        if (!$pResolver) { return null; }
+        $pv = $this->getText($pResolver, $pNode, 'avatar');
+        return ($pv !== null && $pv !== '') ? $pv : null;
     }
 }
