@@ -15,7 +15,6 @@ class Web3Client implements EnsClientInterface
     public function call(array $tx): ?string
     {
         $attempts = 0;
-        $result = null;
         while ($attempts < 3) {
             $attempts++;
             $result = null;
@@ -27,9 +26,11 @@ class Web3Client implements EnsClientInterface
             if (is_string($result) && $result !== '' && $result !== '0x') {
                 return $result;
             }
-            // brief backoff before retry
-            usleep(100000); // 100ms
+            // Retry backoff with jitter 50–250ms
+            $jitterUs = random_int(50_000, 250_000);
+            usleep($jitterUs);
         }
-        return $result;
+        // Return null if all attempts failed or the node returned empty/0x
+        return null;
     }
 }
