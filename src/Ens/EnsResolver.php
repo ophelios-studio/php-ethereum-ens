@@ -20,11 +20,7 @@ class EnsResolver implements EnsResolverInterface
         'email',
         'description',
         'com.twitter', 'twitter',
-        'com.github', 'github',
-        'com.discord',
-        'com.reddit',
-        'org.telegram',
-        'com.linkedin'
+        'com.github', 'github'
     ];
 
     public function __construct(
