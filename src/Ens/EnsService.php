@@ -15,7 +15,7 @@ class EnsService
         $config = new Configuration(
             rpcUrl: $providerUrl,
             timeoutMs: Configuration::DEFAULT_TIMEOUT_MS,
-            registryAddress: Configuration::DEFAULT_REGISTERY_ADDRESS
+            registryAddress: Configuration::DEFAULT_REGISTRY_ADDRESS
         );
         $client = new Web3Client($config);
         $this->resolver = new EnsResolver($client, $config);
