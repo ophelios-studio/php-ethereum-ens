@@ -71,15 +71,6 @@ class LiveEnsTest extends TestCase
         $this->assertSame('ophelios_studio', $profile->twitter);
     }
 
-//    public function testResolveNull()
-//    {
-//        $provider = $this->getProviderUrl();
-//        $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
-//        $service = new EnsService($provider);
-//        $profile = $service->getProfile('lksdfnldskjfsdjfjsdfklsdlfkjsdlfjsdjfsdljfsdjfsd.booe.eth');
-//        $this->assertNull($profile);
-//    }
-
     public function testResolvePrimarySubdomainWithParentAvatarByName()
     {
         $provider = $this->getProviderUrl();
