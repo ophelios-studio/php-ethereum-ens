@@ -35,15 +35,21 @@ class EnsResolver
     }
 
     /**
-     * Retrieves data based on the provided address or name and optional records.
+     * Retrieves data for an ENS name (not an address) and optional records.
+     * This method enforces name-only usage to reduce complexity: first obtain the ENS name
+     * (e.g., via getProfile or fetchName) before requesting specific records.
      *
-     * @param string $addressOrName The address or name to resolve.
-     * @param array|null $records Optional. An array of record types to consider during resolution.
+     * @param string $ensName ENS name to resolve records for (e.g. example.eth)
+     * @param array|null $records Optional. Array of record keys to fetch.
      * @return array The resolved profile data as an array.
+     * @throws \InvalidArgumentException when an address is provided instead of a name.
      */
-    public function getData(string $addressOrName, ?array $records = null): array
+    public function getData(string $ensName, ?array $records = null): array
     {
-        $profile = $this->resolver->resolve($addressOrName, $records);
+        if (!str_contains($ensName, '.')) {
+            throw new \InvalidArgumentException('getData expects an ENS name (e.g., example.eth). Use getProfile or fetchName before calling getData.');
+        }
+        $profile = $this->resolver->resolve($ensName, $records);
         return $profile->toArray();
     }
 }
