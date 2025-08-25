@@ -19,6 +19,50 @@ final class EnsClient
     ) {}
 
     /**
+     * Fetch the first non-empty text value among the provided keys for a given ENS name.
+     * Tries keys in order using the exact node of the name (no parent fallback except what each key provides).
+     *
+     * @param string $ensName The ENS name to query.
+     * @param array<string> $keys Candidate text keys in order of preference.
+     * @return string|null The first non-empty value found, or null.
+     */
+    public function fetchFirstText(string $ensName, array $keys): ?string
+    {
+        foreach ($keys as $key) {
+            if (!is_string($key) || $key === '') { continue; }
+            $val = $this->fetchText($ensName, $key);
+            if ($val !== null && $val !== '') {
+                return $val;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Fetch the first non-empty text among provided keys by querying primary node first
+     * then secondary node for each key.
+     *
+     * @param string $resolverAddress Resolver address owning the records.
+     * @param string $primaryNode The node to try first.
+     * @param string $secondaryNode The node to try as fallback.
+     * @param array<string> $keys Candidate keys in preferred order.
+     * @return string|null First found non-empty value or null.
+     */
+    public function fetchFirstTextByNodes(string $resolverAddress, string $primaryNode, string $secondaryNode, array $keys): ?string
+    {
+        foreach ($keys as $key) {
+            if (!is_string($key) || $key === '') { continue; }
+            $v = $this->reader->getText($resolverAddress, $primaryNode, $key);
+            if ($v !== null && $v !== '') { return $v; }
+            if ($secondaryNode !== $primaryNode) {
+                $v = $this->reader->getText($resolverAddress, $secondaryNode, $key);
+                if ($v !== null && $v !== '') { return $v; }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Return the resolver address configured for a given ENS name or null.
      */
     public function fetchResolverAddressForName(string $ensName): ?string
