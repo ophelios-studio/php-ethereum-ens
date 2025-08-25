@@ -64,7 +64,7 @@ class EnsResolverTest extends TestCase
         };
 
         $resolver = new EnsResolutionEngine($client, $config);
-        $profile = $resolver->resolve($name, ['twitter']);
+        $profile = $resolver->fetchProfile($name, ['twitter']);
 
         $this->assertInstanceOf(EnsProfile::class, $profile);
         $this->assertSame('example.eth', $profile->name);
@@ -112,7 +112,7 @@ class EnsResolverTest extends TestCase
         };
 
         $resolver = new EnsResolutionEngine($client, $config);
-        $profile = $resolver->resolve($addr, []);
+        $profile = $resolver->fetchProfile($addr, []);
 
         $this->assertSame('example.eth', $profile->name);
         $this->assertSame(strtolower($resolvedAccount), $profile->address);

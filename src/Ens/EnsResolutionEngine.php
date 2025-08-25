@@ -17,7 +17,6 @@ class EnsResolutionEngine implements EnsResolverInterface
 
     private ContractReader $reader;
     private EnsClient $ensClient;
-    private ProfileHydrator $hydrator;
 
     public function __construct(
         private readonly Web3ClientInterface $client,
@@ -25,7 +24,6 @@ class EnsResolutionEngine implements EnsResolverInterface
     ) {
         $this->reader = new ContractReader($client, $config);
         $this->ensClient = new EnsClient($client, $this->reader);
-        $this->hydrator = new ProfileHydrator($this->ensClient);
     }
 
     /**
@@ -38,7 +36,7 @@ class EnsResolutionEngine implements EnsResolverInterface
      * @param array<string>|null $records ENS text record keys to fetch (e.g. ['avatar','com.twitter']).
      * @return EnsProfile A profile with name/address and requested properties populated when available.
      */
-    public function resolve(string $addressOrName, ?array $records = null): EnsProfile
+    public function fetchProfile(string $addressOrName, ?array $records = null): EnsProfile
     {
         $profile = new EnsProfile();
         $recordsToFetch = $records ?? self::DEFAULT_RECORDS;
@@ -47,7 +45,7 @@ class EnsResolutionEngine implements EnsResolverInterface
                 // It's a name like example.eth
                 $normalizedName = Utilities::normalize($addressOrName);
                 $profile->name = $normalizedName;
-                $this->hydrator->hydrate($normalizedName, $profile, $recordsToFetch);
+                new ProfileHydrator($this->ensClient, $profile)->hydrate($normalizedName, $recordsToFetch);
             } else {
                 // It's an address (names could start with 0x, but addresses never contain dots)
                 $normalized = strtolower($addressOrName);
@@ -57,21 +55,7 @@ class EnsResolutionEngine implements EnsResolverInterface
                 if ($name) {
                     $normalizedName = Utilities::normalize($name);
                     $profile->name = $normalizedName;
-                    $this->hydrator->hydrate($normalizedName, $profile, $recordsToFetch);
-                }
-            }
-            // Post-safeguards for resilience against transient misses
-            if ($profile->name) {
-                if ($profile->avatar === null) {
-                    $av = $this->fetchAvatar($profile->name);
-                    if ($av !== null && $av !== '') {
-                        $profile->avatar = $av;
-                        $profile->texts['avatar'] = $av;
-                    }
-                }
-                if ($profile->address === null) {
-                    $addr = $this->resolveAddressForName($profile->name);
-                    if ($addr) { $profile->address = $addr; }
+                    new ProfileHydrator($this->ensClient, $profile)->hydrate($normalizedName, $recordsToFetch);
                 }
             }
         } catch (\Throwable $e) {
@@ -91,62 +75,5 @@ class EnsResolutionEngine implements EnsResolverInterface
         return $this->ensClient->fetchName($address);
     }
 
-    /**
-     * Return the resolver address for a given ENS name.
-     *
-     * @param string $ensName ENS name (e.g. example.eth)
-     * @return string|null 0x-prefixed resolver address or null if none configured.
-     */
-    public function fetchResolverAddressForName(string $ensName): ?string
-    {
-        return $this->ensClient->fetchResolverAddressForName($ensName);
-    }
 
-    /**
-     * Resolve the ETH address for a given ENS name via its resolver.
-     * Returns a lowercase 0x address when available.
-     *
-     * @param string $ensName ENS name (e.g. example.eth)
-     * @return string|null Lowercase 0x address or null.
-     */
-    public function resolveAddressForName(string $ensName): ?string
-    {
-        return $this->ensClient->resolveAddressForName($ensName);
-    }
-
-    /**
-     * Convenience reverse lookup wrapper (no primary name verification).
-     *
-     * @param string $address Ethereum address.
-     * @return string|null Normalized ENS name or null.
-     */
-    public function reverseLookupAddress(string $address): ?string
-    {
-        return $this->fetchName($address);
-    }
-
-    /**
-     * Fetch a single text record value for the exact node of the given ENS name.
-     * This does not apply parent fallback; for avatar fallback use fetchAvatar().
-     *
-     * @param string $ensName ENS name to query.
-     * @param string $key Text record key (e.g. avatar, com.twitter, url).
-     * @return string|null Non-empty string value or null.
-     */
-    public function fetchText(string $ensName, string $key): ?string
-    {
-        return $this->ensClient->fetchText($ensName, $key);
-    }
-
-    /**
-     * Fetch avatar text record applying a single-level parent fallback.
-     * If the name has no avatar set on its resolver, tries the parent domain.
-     *
-     * @param string $ensName ENS name to query.
-     * @return string|null Avatar URI or null.
-     */
-    public function fetchAvatar(string $ensName): ?string
-    {
-        return $this->ensClient->fetchAvatar($ensName);
-    }
 }
