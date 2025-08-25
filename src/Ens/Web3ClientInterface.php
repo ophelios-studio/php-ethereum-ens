@@ -1,6 +1,6 @@
 <?php namespace Ens;
 
-interface EnsClientInterface
+interface Web3ClientInterface
 {
     /**
      * Performs an eth_call with given parameters on latest block.

@@ -1,7 +1,7 @@
 <?php
 
 use Ens\Configuration;
-use Ens\EnsClientInterface;
+use Ens\Web3ClientInterface;
 use Ens\EnsResolutionEngine;
 use Ens\EnsProfile;
 use kornrunner\Keccak;
@@ -39,7 +39,7 @@ class EnsResolverTest extends TestCase
         $resolverAddress = '0x1111111111111111111111111111111111111111';
         $accountAddress = '0x2222222222222222222222222222222222222222';
 
-        $client = new class($registry, $node, $resolverAddress, $accountAddress, $this) implements EnsClientInterface {
+        $client = new class($registry, $node, $resolverAddress, $accountAddress, $this) implements Web3ClientInterface {
             public function __construct(private $registry, private $node, private $resolver, private $addr, private $test) {}
             public function call(array $tx): ?string
             {
@@ -85,7 +85,7 @@ class EnsResolverTest extends TestCase
         $resolverForName = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
         $resolvedAccount = '0x2222222222222222222222222222222222222222';
 
-        $client = new class($registry, $reverseNode, $reverseResolver, $name, $nameNode, $resolverForName, $resolvedAccount, $this) implements EnsClientInterface {
+        $client = new class($registry, $reverseNode, $reverseResolver, $name, $nameNode, $resolverForName, $resolvedAccount, $this) implements Web3ClientInterface {
             public function __construct(private $registry, private $reverseNode, private $reverseResolver, private $name, private $nameNode, private $nameResolver, private $resolvedAccount, private $test) {}
             public function call(array $tx): ?string
             {

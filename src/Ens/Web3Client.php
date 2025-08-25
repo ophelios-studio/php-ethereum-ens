@@ -3,7 +3,7 @@
 use Web3\Web3;
 use Web3\Providers\HttpProvider;
 
-readonly class Web3Client implements EnsClientInterface
+readonly class Web3Client implements Web3ClientInterface
 {
     private Web3 $web3;
     private Configuration $configuration;

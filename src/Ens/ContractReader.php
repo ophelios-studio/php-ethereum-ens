@@ -1,13 +1,10 @@
 <?php namespace Ens;
 
-use Ens\Configuration;
-use Ens\EnsClientInterface;
-
 final readonly class ContractReader
 {
     public function __construct(
-        private EnsClientInterface $client,
-        private Configuration $config
+        private Web3ClientInterface $client,
+        private Configuration       $config
     ) {}
 
     /**
