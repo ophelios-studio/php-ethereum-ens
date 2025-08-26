@@ -3,7 +3,7 @@
 // Facade class for ENS operations
 class EnsService
 {
-    private Web3Client $client;
+    private Web3ClientInterface $client;
 
     public function __construct(string|Web3ClientInterface $client)
     {
