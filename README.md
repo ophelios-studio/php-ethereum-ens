@@ -1,16 +1,17 @@
 # PHP Ethereum ENS
 
-A lightweight, dependency‑minimal ENS (Ethereum Name Service) resolver for PHP.
+A lightweight PHP library to read ENS (Ethereum Name Service) records via standard JSON-RPC providers. It provides:
 
-- Resolve by ENS name to address and profile records.
-- Reverse resolve an address to its primary ENS name.
-- Fetch common ENS text records (avatar, url, twitter, github, …).
-- Works with any Ethereum JSON-RPC provider (Infura, Alchemy, self‑hosted, etc.).
-- Read‑only: uses eth_call only, no transactions (no gas cost).
+- Reverse lookup (address -> primary ENS name)
+- Name resolution for records and avatar
+- A simple profile hydrator to fetch common text records
+- A small facade (EnsService) for convenience
+
+The library does not write to the chain and works with any Ethereum-compatible RPC endpoint.
 
 ## Installation
 
-Require via Composer:
+Install with Composer:
 
 ```
 composer require ophelios/php-ethereum-ens
@@ -19,78 +20,83 @@ composer require ophelios/php-ethereum-ens
 ## Quick start
 
 ```php
-use Ens\EnsResolver;
+use Ens\EnsService;
 
-$providerUrl = 'https://mainnet.infura.io/v3/<your-project-id>'; // or any mainnet JSON‑RPC URL
-$ens = new EnsResolver($providerUrl);
+$rpcUrl = getenv('ENS_PROVIDER_URL') ?: 'https://mainnet.infura.io/v3/<key>';
+$ens = new EnsService($rpcUrl);
 
-// Resolve by name
-$profile = $ens->getProfile('vitalik.eth');
-print_r($profile->toArray());
+// Reverse resolve
+$name = $ens->resolveEnsName('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045');
+// => 'vitalik.eth'
 
-// Resolve by address (reverse lookup + forward records)
-$profile = $ens->getProfile('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045');
-print_r($profile->toArray());
+// Resolve a profile (common records by default)
+$profile = $ens->resolveProfile('vitalik.eth');
+// $profile is an instance of Ens\EnsProfile
+
+// Resolve single/multiple records
+$avatar = $ens->resolveAvatar('vitalik.eth');
+$url = $ens->resolveRecord('vitalik.eth', 'url');
+$records = $ens->resolveRecords('vitalik.eth', ['email', 'url']);
 ```
 
-### What you get back
-`EnsProfile` exposes convenient properties and a generic `texts` map for any fetched key:
-- name, address
-- avatar, url, email, description, display, notice, keywords
-- twitter, github, discord, reddit, telegram, keybase, matrix, linkedin
-- texts: [ensKey => value]
+## API Overview
 
-### Supported records by default
-The resolver fetches a curated set of common ENS text records when you don’t pass a list:
-`avatar, display, url, email, description, notice, keywords, com.twitter, twitter, com.github, github, com.discord, com.reddit, org.telegram, io.keybase, org.matrix, com.linkedin`
+- Ens\\EnsService
+  - __construct(string|Ens\\Web3ClientInterface $clientOrRpcUrl)
+  - resolveEnsName(string $address): ?string
+  - resolveProfile(string $ensName, array $records = Ens\\ProfileHydrator::DEFAULT_RECORDS): Ens\\EnsProfile
+  - resolveAvatar(string $ensName, bool $parentFallback = true): ?string
+  - resolveRecord(string $ensName, string|array $record): ?string
+  - resolveRecords(string $ensName, array $records): ?array
 
-You can also pass a custom list to `getProfile($name, $records)` if you use the lower‑level resolver directly.
+- Ens\\Resolver
+  - Resolve individual records for a name. Handles parent fallback for avatar and inherited resolvers.
+
+- Ens\\ReverseLookup
+  - Reverse resolve address -> name using the registry and the default reverse resolver as fallback.
+
+- Ens\\ProfileHydrator
+  - Populates an EnsProfile from Resolver data with a set of requested records.
+
+- Ens\\Utilities
+  - normalize(string $name): string
+  - namehash(string $name): string
+
+- Ens\\Web3ClientInterface / Ens\\Web3Client
+  - Thin wrapper around web3p/web3.php for read-only eth_call with retries.
 
 ## Testing
 
-This project uses PHPUnit. Unit tests mock the JSON‑RPC client; live tests query Ethereum mainnet.
+The test suite contains both unit tests (with mocks) and an optional live integration test.
 
-- Copy .env.example to .env and set your provider URL (kept out of VCS/CI logs):
-
-```
-cp .env.example .env
-# edit .env to set ENS_PROVIDER_URL
-```
-
-- Run tests locally:
+Run all tests (unit + integration):
 
 ```
-composer install
-composer test
+vendor/bin/phpunit
 ```
 
-By default, if `ENS_PROVIDER_URL` is not set, live tests are skipped. To run live tests:
+Run unit tests only:
 
 ```
-ENS_PROVIDER_URL=https://mainnet.infura.io/v3/<your-project-id> \
-  vendor/bin/phpunit --testsuite Integration
+vendor/bin/phpunit --testsuite Unit
 ```
 
-### CI status & coverage
-- CI runs on pushes/PRs to `dev`. Unit tests always run. Integration tests also run in CI when `ENS_PROVIDER_URL` is provided as a GitHub Actions secret.
-- To see coverage locally, enable a coverage driver (Xdebug or PCOV) and run:
+Integration tests require an Ethereum RPC URL with ENS access. Set an environment variable:
 
 ```
-vendor/bin/phpunit --coverage-text
+ENS_PROVIDER_URL=https://mainnet.infura.io/v3/<key>
 ```
 
-## Usage notes & security
-- The resolver is read‑only and never sends transactions.
-- Provider URL is read from the environment via Dotenv in tests; keep secrets out of source control.
+Then run:
 
-## Contributing
-- Issues and PRs are welcome.
-- For feature work, please add/update unit tests (and integration tests if they touch live resolution behavior).
+```
+vendor/bin/phpunit --testsuite Integration
+```
 
-## Funding / Donations
-If this library helps you, consider supporting:
-- GitHub Sponsors: ophelios-studio
-- ETH: ophelios.booe.eth
+## Notes
 
-## License
-MIT License © Ophelios Studio
+- This package performs read-only on-chain calls via eth_call. No private keys are required.
+- For internationalized domains, normalize() attempts to use idn_to_ascii when available.
+- Mainnet registry and default reverse resolver addresses are embedded in the library.
+
+
