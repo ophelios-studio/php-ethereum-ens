@@ -78,6 +78,16 @@ class LiveEnsTest extends TestCase
         $this->assertSame(null, $profile->address);
     }
 
+    public function testResolveNoName()
+    {
+        sleep(2);
+        $provider = $this->getProviderUrl();
+        $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
+        $service = new EnsService($provider);
+        $name = $service->resolveEnsName('0x827543b48c0E2Db6daF947Bcef77A3C8062AB1fe');
+        $this->assertNull($name);
+    }
+
     private function getProviderUrl(): ?string
     {
         $candidates = [];
