@@ -15,6 +15,7 @@
       }
     ],
     "require": {
+      "php": ">=8.4",
       "kornrunner/keccak": "^1.1",
       "web3p/web3.php": "^0.3.2"
     },
