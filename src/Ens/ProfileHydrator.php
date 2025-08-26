@@ -1,18 +1,24 @@
 <?php namespace Ens;
 
-/**
- * ProfileHydrator fills an EnsProfile with address and text records for a given ENS name,
- * using a provided EnsClient. It centralizes the record mapping and fallback behavior
- * and exposes a small, easy to follow public API.
- */
 final class ProfileHydrator
 {
-    private ?string $resolver = null;
-    private string $queryNode = '';
-    private string $nodeUsed = '';
+    /**
+     * Default set of ENS text records to fetch when no list is provided at call-site. These include core EIP-634 keys
+     * and popular community keys. When an array is provided, the first matching key is used.
+     */
+    public const array DEFAULT_RECORDS = [
+        'avatar',
+        'url',
+        'email',
+        'description',
+        ['com.twitter', 'twitter'],
+        ['com.github', 'github']
+    ];
+
+    private ?Resolver $resolver = null;
 
     public function __construct(
-        private readonly EnsClient $ensClient,
+        private readonly Web3ClientInterface $client,
         private readonly EnsProfile $profile
     ) {}
 
@@ -22,153 +28,106 @@ final class ProfileHydrator
      * @param string $name Normalized ENS name
      * @param array $records Requested text record keys
      */
-    public function hydrate(string $name, array $records): void
+    public function hydrate(string $name, array $records = self::DEFAULT_RECORDS): void
     {
-        $this->initiateNodes($name);
-        if ($this->resolver === null) {
-            return;
-        }
-
-        // Address first to match previous behavior
-        $this->populateAddress();
-
-        [$requested, $requestedOrig] = $this->collectRequested($records);
-
-        // Avatar uses dedicated fallback behavior
-        $this->applyAvatar($name, $requested, $requestedOrig);
-
-        // Social pairs (avoid duplicate lookups)
-        $this->fetchSocialPair('com.twitter', 'twitter', $requested, $requestedOrig);
-        $this->fetchSocialPair('com.github', 'github', $requested, $requestedOrig);
-
-        // Remaining requested records
-        $this->fetchRemaining($requested);
+        $this->profile->name = $name;
+        $this->initiateResolver($name);
+        $this->hydrateAddress();
+        $this->hydrateRecords($records);
     }
 
-    /**
-     * Initialize resolver and nodes used for queries and fallback.
-     * Sets $this->resolver, $this->queryNode, and $this->nodeUsed.
-     */
-    private function initiateNodes(string $name): void
+    private function hydrateRecords(array $records): void
     {
-        [$resolverAddress, $nodeUsed] = $this->ensClient->findResolverNode($name);
-        if (!$resolverAddress) {
-            $this->resolver = null;
-            $this->queryNode = '';
-            $this->nodeUsed = '';
-            return;
+        foreach ($records as $entry) {
+            if (is_string($entry)) {
+                $this->hydrateRecord($entry);
+            }
+            if (is_array($entry)) {
+                $this->hydrateArrayRecord($entry);
+            }
         }
-        $this->resolver = $resolverAddress;
-        $this->queryNode = Utilities::namehash($name);
-        $this->nodeUsed = $nodeUsed;
     }
 
-    /**
-     * Populate address from queryNode with fallback to nodeUsed.
-     */
-    private function populateAddress(): void
+    private function hydrateRecord(string $entry): void
     {
-        if ($this->resolver === null) { return; }
-        $addr = $this->fetchAddrFrom($this->resolver, $this->queryNode);
-        if (!$addr && $this->nodeUsed !== $this->queryNode) {
-            $addr = $this->fetchAddrFrom($this->resolver, $this->nodeUsed);
+        $key = strtolower($entry);
+        if ($key === 'avatar') {
+            $this->hydrateAvatar();
+            return;
         }
+        $this->hydrateText($key);
+    }
+
+    private function hydrateArrayRecord(array $entry): void
+    {
+        $keys = array_values(array_filter(array_map(fn($k) => is_string($k) ? strtolower($k) : null, $entry)));
+        if (count($keys) === 0) {
+            return;
+        }
+        if ($this->resolver) {
+            $val = $this->resolver->getFirstText($keys);
+            if ($val !== null && $val !== '') {
+                // Populate texts for each member key
+                foreach ($keys as $k) {
+                    $this->profile->texts[$k] = $val;
+                }
+                // Map to the first matching known property
+                $map = $this->getPropertyMap();
+                foreach ($keys as $k) {
+                    if (isset($map[$k])) {
+                        $prop = $map[$k];
+                        $this->profile->$prop = $val;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    private function hydrateAvatar(): void
+    {
+        if ($this->resolver) {
+            $avatar = $this->resolver->getAvatar();
+            if ($avatar !== null && $avatar !== '') {
+                $this->profile->avatar = $avatar;
+                $this->profile->texts['avatar'] = $avatar;
+            }
+        }
+    }
+
+    private function hydrateText(string $key): void
+    {
+        if ($this->resolver) {
+            $val = $this->resolver->getText($key);
+            if ($val !== null && $val !== '') {
+                $this->profile->texts[$key] = $val;
+                $map = $this->getPropertyMap();
+                if (isset($map[$key])) {
+                    $prop = $map[$key];
+                    $this->profile->$prop = $val;
+                }
+            }
+        }
+    }
+
+    private function initiateResolver(string $name): void
+    {
+        $this->resolver = new Resolver($name, $this->client);
+    }
+
+    private function hydrateAddress(): void
+    {
+        if ($this->resolver === null || !$this->resolver->exists()) {
+            return;
+        }
+        $addr = $this->resolver->getAddress();
         if ($addr) {
             $this->profile->address = $addr;
         }
     }
 
     /**
-     * Normalize and de-duplicate requested keys.
-     *
-     * @param array $records
-     * @return array{0:array<string,bool>,1:array<string,bool>}
-     */
-    private function collectRequested(array $records): array
-    {
-        $requested = [];
-        foreach ($records as $k) {
-            if (is_string($k) && $k !== '') {
-                $requested[strtolower($k)] = true;
-            }
-        }
-        $requestedOrig = $requested;
-        return [$requested, $requestedOrig];
-    }
-
-    /**
-     * Fetch avatar via dedicated RecordFetcher (with parent fallback).
-     * Unsets the 'avatar' request after applying.
-     */
-    private function applyAvatar(string $name, array &$requested, array $requestedOrig): void
-    {
-        if (!isset($requested['avatar'])) {
-            return;
-        }
-        $avatar = $this->ensClient->fetchAvatar($name);
-        if ($avatar !== null) {
-            $this->profile->avatar = $avatar;
-            $this->profile->texts['avatar'] = $avatar;
-        }
-        unset($requested['avatar']);
-    }
-
-    /**
-     * Handle paired social keys (e.g., com.twitter/twitter) with preference to the namespaced key.
-     */
-    private function fetchSocialPair(
-        string $primaryKey,
-        string $secondaryKey,
-        array &$requested,
-        array $requestedOrig
-    ): void {
-        if (!isset($requested[$primaryKey]) && !isset($requested[$secondaryKey])) {
-            return;
-        }
-        if ($this->resolver === null) { unset($requested[$primaryKey], $requested[$secondaryKey]); return; }
-        $keys = [$primaryKey, $secondaryKey];
-        $val = $this->ensClient->fetchFirstTextByNodes($this->resolver, $this->queryNode, $this->nodeUsed, $keys);
-        if ($val !== null && $val !== '') {
-            // Reflect the found value under any originally requested keys
-            foreach ($keys as $k) {
-                if (isset($requestedOrig[$k])) {
-                    $this->profile->texts[$k] = $val;
-                }
-            }
-            // Map to a known property using the first key that has a mapping
-            $map = $this->getPropertyMap();
-            foreach ($keys as $k) {
-                if (isset($map[$k])) {
-                    $prop = $map[$k];
-                    $this->profile->$prop = $val;
-                    break;
-                }
-            }
-        }
-        unset($requested[$primaryKey], $requested[$secondaryKey]);
-    }
-
-    /**
-     * Fetch all remaining keys using standard fallback order, updating profile texts and mapped props.
-     */
-    private function fetchRemaining(
-        array $requested
-    ): void {
-        $map = $this->getPropertyMap();
-        foreach (array_keys($requested) as $ensKey) {
-            $value = $this->fetchTextWithFallback($ensKey);
-            if ($value !== null && $value !== '') {
-                $this->profile->texts[$ensKey] = $value;
-                if (isset($map[$ensKey])) {
-                    $prop = $map[$ensKey];
-                    $this->profile->$prop = $value;
-                }
-            }
-        }
-    }
-
-    /**
-     * Property map for known ENS text keys.
+     * Property map for known ENS text keys which are properties of EnsProfile.
      *
      * @return array<string,string>
      */
@@ -188,28 +147,5 @@ final class ProfileHydrator
             'org.telegram' => 'telegram',
             'com.linkedin' => 'linkedin',
         ];
-    }
-
-    /**
-     * Fetch a text value trying queryNode first then nodeUsed.
-     */
-    private function fetchTextWithFallback(string $key): ?string
-    {
-        if ($this->resolver === null) { return null; }
-        $v = $this->fetchTextFrom($this->resolver, $this->queryNode, $key);
-        if ($v === null || $v === '') {
-            $v = $this->fetchTextFrom($this->resolver, $this->nodeUsed, $key);
-        }
-        return ($v !== null && $v !== '') ? $v : null;
-    }
-
-    private function fetchAddrFrom(string $resolverAddress, string $node): ?string
-    {
-        return $this->ensClient->fetchAddrByNode($resolverAddress, $node);
-    }
-
-    private function fetchTextFrom(string $resolverAddress, string $node, string $key): ?string
-    {
-        return $this->ensClient->fetchTextByNode($resolverAddress, $node, $key);
     }
 }

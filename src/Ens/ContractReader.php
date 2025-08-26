@@ -2,9 +2,10 @@
 
 final readonly class ContractReader
 {
+    public const string DEFAULT_REGISTRY_ADDRESS = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e'; // ENS Registry mainnet address
+
     public function __construct(
-        private Web3ClientInterface $client,
-        private Configuration       $config
+        private Web3ClientInterface $client
     ) {}
 
     /**
@@ -16,7 +17,7 @@ final readonly class ContractReader
     public function getResolver(string $node): ?string
     {
         $result = $this->client->call([
-            'to' => $this->config->registryAddress,
+            'to' => self::DEFAULT_REGISTRY_ADDRESS,
             'data' => '0x0178b8bf' . substr($node, 2)
         ]);
         if ($result && $result !== '0x0000000000000000000000000000000000000000000000000000000000000000') {
@@ -26,12 +27,7 @@ final readonly class ContractReader
     }
 
     /**
-     * Retrieves a text record value for the given resolver address, node, and key.
-     *
-     * @param string $resolverAddress The address of the resolver contract to query.
-     * @param string $node The unique node identifier (e.g., a hash or encoded value).
-     * @param string $key The key for which the text value is being retrieved.
-     * @return string|null Returns the retrieved text value as a string or null if the value cannot be found or decoded.
+     * Retrieves a text record value for the given resolver address, node, and key using ABI-correct encoding.
      */
     public function getText(string $resolverAddress, string $node, string $key): ?string
     {
@@ -54,10 +50,6 @@ final readonly class ContractReader
     /**
      * Retrieves the Ethereum address record for a node from a resolver as a lowercase hexadecimal string prefixed
      * with "0x", or null if the address cannot be found, is invalid, or consists only of zeros.
-     *
-     * @param string $resolverAddress The address of the resolver contract to query.
-     * @param string $node The unique node identifier (e.g., a hash or encoded value).
-     * @return string|null Returns the retrieved Ethereum address.
      */
     public function getAddr(string $resolverAddress, string $node): ?string
     {
