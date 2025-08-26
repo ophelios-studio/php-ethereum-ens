@@ -1,13 +1,14 @@
 # PHP Ethereum ENS
 
-A lightweight PHP library to read ENS (Ethereum Name Service) records via standard JSON-RPC providers. It provides:
+A lightweight PHP library to read ENS (Ethereum Name Service) records via standard JSON-RPC providers.
 
+Features:
 - Reverse lookup (address -> primary ENS name)
-- Name resolution for records and avatar
-- A simple profile hydrator to fetch common text records
-- A small facade (EnsService) for convenience
+- Resolve text records and avatar for a name
+- Simple profile hydrator for common records
+- Small facade (EnsService) for convenience
 
-The library does not write to the chain and works with any Ethereum-compatible RPC endpoint.
+The library performs read-only calls and works with any Ethereum-compatible RPC endpoint.
 
 ## Installation
 
@@ -39,7 +40,7 @@ $url = $ens->resolveRecord('vitalik.eth', 'url');
 $records = $ens->resolveRecords('vitalik.eth', ['email', 'url']);
 ```
 
-## API Overview
+## API overview
 
 - Ens\\EnsService
   - __construct(string|Ens\\Web3ClientInterface $clientOrRpcUrl)
@@ -49,21 +50,38 @@ $records = $ens->resolveRecords('vitalik.eth', ['email', 'url']);
   - resolveRecord(string $ensName, string|array $record): ?string
   - resolveRecords(string $ensName, array $records): ?array
 
-- Ens\\Resolver
-  - Resolve individual records for a name. Handles parent fallback for avatar and inherited resolvers.
+- Ens\\Resolver: resolve individual records for a name. Handles inherited resolvers and one-level parent fallback for avatar.
+- Ens\\ReverseLookup: reverse resolve address -> name using registry, with default reverse resolver fallback.
+- Ens\\ProfileHydrator: populate an EnsProfile with a set of requested records.
+- Ens\\Utilities: normalize(string $name), namehash(string $name)
+- Ens\\Web3ClientInterface / Ens\\Web3Client: thin wrapper around web3p/web3.php for eth_call with retries.
 
-- Ens\\ReverseLookup
-  - Reverse resolve address -> name using the registry and the default reverse resolver as fallback.
+### Configuration and custom client
 
-- Ens\\ProfileHydrator
-  - Populates an EnsProfile from Resolver data with a set of requested records.
+You can pass a custom client instead of a URL if you need to control retries or timeouts:
 
-- Ens\\Utilities
-  - normalize(string $name): string
-  - namehash(string $name): string
+```php
+use Ens\Web3Client;
+use Ens\Configuration;
+use Ens\EnsService;
 
-- Ens\\Web3ClientInterface / Ens\\Web3Client
-  - Thin wrapper around web3p/web3.php for read-only eth_call with retries.
+$client = new Web3Client(new Configuration(
+    rpcUrl: 'https://mainnet.infura.io/v3/<key>',
+    timeoutMs: 10000,
+    maxRetries: 3,
+));
+
+$ens = new EnsService($client);
+```
+
+### Default records
+
+ProfileHydrator::DEFAULT_RECORDS includes:
+- avatar, url, email, description
+- social aliases: ["com.twitter","twitter"], ["com.github","github"]
+- 
+When an array of keys is provided, the first matching key is mapped to the corresponding profile property; all keys 
+in that group are still available in $profile->texts.
 
 ## Testing
 
@@ -93,10 +111,23 @@ Then run:
 vendor/bin/phpunit --testsuite Integration
 ```
 
+## Contributing
+
+We welcome contributions! If you find a bug or have an enhancement in mind:
+- Open an issue to discuss it, or
+- Send a pull request (PR) with a clear description and relevant tests.
+
+To work on the project locally:
+- Install dependencies: `composer install`
+- Run unit tests: `vendor/bin/phpunit --testsuite Unit`
+- Please do not modify integration tests in PRs unless specifically discussed.
+
+## License
+
+MIT License © 2025 Ophelios. See the LICENSE file for full text.
+
 ## Notes
 
-- This package performs read-only on-chain calls via eth_call. No private keys are required.
+- Read-only on-chain calls via eth_call. No private keys are required.
 - For internationalized domains, normalize() attempts to use idn_to_ascii when available.
 - Mainnet registry and default reverse resolver addresses are embedded in the library.
-
-
