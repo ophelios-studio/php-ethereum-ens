@@ -1,5 +1,8 @@
 # PHP Ethereum ENS
 
+[![Maintainability](https://qlty.sh/badges/7487c070-b46a-4e39-97ae-4abd686f2320/maintainability.svg)](https://qlty.sh/gh/ophelios-studio/projects/php-ethereum-ens)
+[![Code Coverage](https://qlty.sh/badges/7487c070-b46a-4e39-97ae-4abd686f2320/coverage.svg)](https://qlty.sh/gh/ophelios-studio/projects/php-ethereum-ens)
+
 A lightweight PHP library to read ENS (Ethereum Name Service) records via standard JSON-RPC providers.
 
 Features:
@@ -27,14 +30,19 @@ $rpcUrl = getenv('ENS_PROVIDER_URL') ?: 'https://mainnet.infura.io/v3/<key>';
 $ens = new EnsService($rpcUrl);
 
 // Reverse resolve
-$name = $ens->resolveEnsName('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045');
-// => 'vitalik.eth'
+$name = $ens->resolveEnsName('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'); // vitalik.ethù
 
 // Resolve a profile (common records by default)
 $profile = $ens->resolveProfile('vitalik.eth');
-// $profile is an instance of Ens\EnsProfile
+```
 
-// Resolve single/multiple records
+```php
+use Ens\EnsService;
+
+$rpcUrl = getenv('ENS_PROVIDER_URL') ?: 'https://mainnet.infura.io/v3/<key>';
+$ens = new EnsService($rpcUrl);
+
+// Resolve single/multiple records (without profile)
 $avatar = $ens->resolveAvatar('vitalik.eth');
 $url = $ens->resolveRecord('vitalik.eth', 'url');
 $records = $ens->resolveRecords('vitalik.eth', ['email', 'url']);
