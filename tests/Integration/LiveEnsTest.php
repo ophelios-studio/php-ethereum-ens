@@ -11,7 +11,6 @@ class LiveEnsTest extends TestCase
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
         $service = new EnsService($provider);
         $profile = $service->resolveProfile('vitalik.eth');
-        print_r($profile);
         $this->assertSame('vitalik.eth', $profile->name);
         $this->assertSame(strtolower('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'), $profile->address);
         $this->assertSame('https://euc.li/vitalik.eth', $profile->avatar);
@@ -23,6 +22,7 @@ class LiveEnsTest extends TestCase
 
     public function testResolveByAddress()
     {
+        sleep(2);
         $provider = $this->getProviderUrl();
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
         $service = new EnsService($provider);
@@ -32,11 +32,11 @@ class LiveEnsTest extends TestCase
 
     public function testResolvePrimarySubdomainByName()
     {
+        sleep(2);
         $provider = $this->getProviderUrl();
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
         $service = new EnsService($provider);
         $profile = $service->resolveProfile('ophelios.booe.eth');
-        print_r($profile);
         $this->assertSame('ophelios.booe.eth', $profile->name);
         $this->assertSame(strtolower('0xe4A2C90a656D0DEc8357953d97C5AcbA7C3f32d4'), $profile->address);
         $this->assertSame('https://euc.li/ophelios.booe.eth', $profile->avatar);
@@ -47,6 +47,7 @@ class LiveEnsTest extends TestCase
 
     public function testResolvePrimarySubdomainByAddress()
     {
+        sleep(2);
         $provider = $this->getProviderUrl();
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
         $service = new EnsService($provider);
@@ -56,11 +57,11 @@ class LiveEnsTest extends TestCase
 
     public function testResolvePrimarySubdomainWithParentAvatarByName()
     {
+        sleep(2);
         $provider = $this->getProviderUrl();
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
         $service = new EnsService($provider);
         $profile = $service->resolveProfile('dadajuice.booe.eth');
-        print_r($profile);
         $this->assertSame('dadajuice.booe.eth', $profile->name);
         $this->assertSame(strtolower('0x846a07aa7577440174Fe89B82130D836389b1b81'), $profile->address);
         $this->assertSame('https://avatars.namespace.ninja/boe.png', $profile->avatar);;
@@ -68,11 +69,11 @@ class LiveEnsTest extends TestCase
 
     public function testResolveUnassignedSubdomain()
     {
+        sleep(2);
         $provider = $this->getProviderUrl();
         $this->assertNotEmpty($provider, 'ENS_PROVIDER_URL must be set');
         $service = new EnsService($provider);
         $profile = $service->resolveProfile('trump.booe.eth');
-        print_r($profile);
         $this->assertSame('trump.booe.eth', $profile->name);
         $this->assertSame(null, $profile->address);
     }
